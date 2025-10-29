@@ -15,7 +15,7 @@
  * @author Julien Delange
  * @created 2024
  */
-package org.owasp.benchmarkutils.score.parsers;
+package org.owasp.benchmarkutils.score.parsers.sarif;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
