@@ -1,9 +1,8 @@
 /**
  * OWASP Benchmark Project
  *
- * <p>This file is part of the Open Web Application Security Project (OWASP) Benchmark Project For
- * details, please see <a
- * href="https://owasp.org/www-project-benchmark/">https://owasp.org/www-project-benchmark/</a>.
+ * <p>This file is part of the Open Web Application Security Project (OWASP) Benchmark Project.
+ * For details, please see https://owasp.org/www-project-benchmark/.
  *
  * <p>The OWASP Benchmark is free software: you can redistribute it and/or modify it under the terms
  * of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -26,9 +25,8 @@ import org.owasp.benchmarkutils.score.TestSuiteResults;
 import org.owasp.benchmarkutils.score.parsers.Reader;
 
 /**
- * This reader is made for the datadog-saist-experiment tool available on <a
- * href="https://github.com/DataDog/datadog-saist-experiment">...</a>. It uses the SARIF file
- * produced by the AI-native SAST tool.
+ * Reader for SARIF produced by the Datadog SAIST experiment tool:
+ * https://github.com/DataDog/datadog-saist-experiment
  */
 public class DatadogSaistReader extends Reader {
     private static final String DATADOG_SAIST_TOOL_NAME = "datadog-saist";
@@ -36,128 +34,100 @@ public class DatadogSaistReader extends Reader {
     @Override
     public boolean canRead(ResultFile resultFile) {
         try {
-            return resultFile.filename().endsWith(".sarif")
-                    && resultFile.isJson()
-                    && resultFile
-                            .json()
-                            .getJSONArray("runs")
-                            .getJSONObject(0)
-                            .getJSONObject("tool")
-                            .getJSONObject("driver")
-                            .getString("name")
-                            .equalsIgnoreCase(DATADOG_SAIST_TOOL_NAME)
-                    && resultFile
-                            .json()
-                            .getJSONArray("runs")
-                            .getJSONObject(0)
-                            .getJSONObject("tool")
-                            .getJSONObject("driver")
-                            .has("version");
+            if (!resultFile.filename().endsWith(".sarif") || !resultFile.isJson()) {
+                return false;
+            }
+
+            JSONObject driver = resultFile.json()
+                    .getJSONArray("runs").getJSONObject(0)
+                    .getJSONObject("tool").getJSONObject("driver");
+
+            String name = driver.optString("name", "");
+            if (!DATADOG_SAIST_TOOL_NAME.equalsIgnoreCase(name)) {
+                return false;
+            }
+
+            // Be tolerant: accept if any version-ish indicator exists (or even drop this check).
+            return driver.has("version")
+                    || driver.has("semanticVersion")
+                    || driver.has("informationUri");
         } catch (Exception e) {
             return false;
         }
     }
 
     /**
-     * Provide a direct mapping between a SAIST rule identifier and a CWE
+     * Direct mapping of SAIST rule identifiers to OWASP Benchmark CWE/category types.
      *
      * @param ruleId the rule identifier
-     * @return the corresponding CWE identifier
+     * @return a Type enum containing the CWE number and category id, or null if unmapped
      */
     private Type getTypeFromRuleId(String ruleId) {
         // Java rules
-        if ("datadog/java-cmdi".equals(ruleId)) {
-            return Type.COMMAND_INJECTION; // CWE-77
-        }
-        if ("datadog/java-sqli".equals(ruleId)) {
-            return Type.SQL_INJECTION; // CWE-89
-        }
-        if ("datadog/java-xpathi".equals(ruleId)) {
-            return Type.XPATH_INJECTION; // CWE-91
-        }
-        if ("datadog/java-xss".equals(ruleId)) {
-            return Type.XSS; // CWE-79
-        }
+        if ("datadog/java-cmdi".equals(ruleId)) return Type.COMMAND_INJECTION; // CWE-77
+        if ("datadog/java-sqli".equals(ruleId)) return Type.SQL_INJECTION;     // CWE-89
+        if ("datadog/java-xpathi".equals(ruleId)) return Type.XPATH_INJECTION; // CWE-91
+        if ("datadog/java-xss".equals(ruleId))  return Type.XSS;               // CWE-79
 
         // Go rules
-        if ("datadog/go-cmdi".equals(ruleId)) {
-            return Type.COMMAND_INJECTION; // CWE-77
-        }
-        if ("datadog/go-sqli".equals(ruleId)) {
-            return Type.SQL_INJECTION; // CWE-89
-        }
-        if ("datadog/go-xpathi".equals(ruleId)) {
-            return Type.XPATH_INJECTION; // CWE-91
-        }
-        if ("datadog/go-xss".equals(ruleId)) {
-            return Type.XSS; // CWE-79
-        }
+        if ("datadog/go-cmdi".equals(ruleId))   return Type.COMMAND_INJECTION; // CWE-77
+        if ("datadog/go-sqli".equals(ruleId))   return Type.SQL_INJECTION;     // CWE-89
+        if ("datadog/go-xpathi".equals(ruleId)) return Type.XPATH_INJECTION;   // CWE-91
+        if ("datadog/go-xss".equals(ruleId))    return Type.XSS;               // CWE-79
 
         // Python rules
-        if ("datadog/python-cmdi".equals(ruleId)) {
-            return Type.COMMAND_INJECTION; // CWE-77
-        }
-        if ("datadog/python-sqli".equals(ruleId)) {
-            return Type.SQL_INJECTION; // CWE-89
-        }
-        if ("datadog/python-xpathi".equals(ruleId)) {
-            return Type.XPATH_INJECTION; // CWE-91
-        }
-        if ("datadog/python-xss".equals(ruleId)) {
-            return Type.XSS; // CWE-79
-        }
+        if ("datadog/python-cmdi".equals(ruleId))   return Type.COMMAND_INJECTION; // CWE-77
+        if ("datadog/python-sqli".equals(ruleId))   return Type.SQL_INJECTION;     // CWE-89
+        if ("datadog/python-xpathi".equals(ruleId)) return Type.XPATH_INJECTION;   // CWE-91
+        if ("datadog/python-xss".equals(ruleId))    return Type.XSS;               // CWE-79
 
         return null;
     }
 
-    // Not needed for SAIST since we have exact rule IDs
-    // Keeping for potential future use with rule variations
-
     /**
-     * Try to get the CWE from the violation object in the SARIF report.
+     * Try to extract CWE from a SARIF result object's properties or nested rule metadata.
      *
-     * @param violation the violation object from the SARIF report
-     * @return the CWE if found, 0 otherwise
+     * @param violation SARIF result object
+     * @return CWE number or 0 if none found
      */
     private int getCweFromProperties(JSONObject violation) {
         try {
-            // Check properties.tags for CWE information
-            JSONObject properties = violation.getJSONObject("properties");
-            if (properties.has("tags")) {
-                JSONArray tags = properties.getJSONArray("tags");
-                for (int k = 0; k < tags.length(); k++) {
-                    String tag = tags.getString(k);
-                    if (tag.toUpperCase().contains("CWE")) {
-                        // Extract CWE number from various formats: CWE-89, CWE:89, cwe89, etc.
-                        String cweStr = tag.replaceAll("(?i)cwe[-:]?", "").replaceAll("[^0-9]", "");
-                        if (!cweStr.isEmpty()) {
-                            return Integer.parseInt(cweStr);
+            // properties.tags: look for "CWE-###", "CWE:###", "cwe###"
+            if (violation.has("properties")) {
+                JSONObject properties = violation.getJSONObject("properties");
+                if (properties.has("tags")) {
+                    JSONArray tags = properties.getJSONArray("tags");
+                    for (int k = 0; k < tags.length(); k++) {
+                        String tag = tags.optString(k, "");
+                        if (tag.toUpperCase().contains("CWE")) {
+                            String cweStr = tag.replaceAll("(?i)cwe[-:]?", "")
+                                               .replaceAll("[^0-9]", "");
+                            if (!cweStr.isEmpty()) {
+                                return Integer.parseInt(cweStr);
+                            }
                         }
                     }
                 }
+                if (properties.has("cwe")) {
+                    return properties.optInt("cwe", 0);
+                }
             }
-
-            // Check if there's direct CWE property
-            if (properties.has("cwe")) {
-                return properties.getInt("cwe");
-            }
-        } catch (Exception e) {
-            // Continue to try other methods if properties parsing fails
+        } catch (Exception ignore) {
+            // fall through to rule-level extraction
         }
 
-        // Try to get CWE from rule metadata
         try {
             if (violation.has("rule")) {
                 JSONObject rule = violation.getJSONObject("rule");
                 if (rule.has("properties")) {
                     JSONObject ruleProps = rule.getJSONObject("properties");
                     if (ruleProps.has("cwe")) {
-                        return ruleProps.getInt("cwe");
+                        return ruleProps.optInt("cwe", 0);
                     }
                 }
             }
-        } catch (Exception e) {
-            return 0;
+        } catch (Exception ignore) {
+            // give up
         }
 
         return 0;
@@ -181,7 +151,11 @@ public class DatadogSaistReader extends Reader {
                 continue;
             }
 
-            tr.setToolVersion(driver.getString("version"));
+            // Be tolerant of different version fields
+            String toolVersion = driver.optString(
+                    "version",
+                    driver.optString("semanticVersion", "unknown"));
+            tr.setToolVersion(toolVersion);
 
             if (!run.has("results")) {
                 continue;
@@ -191,18 +165,19 @@ public class DatadogSaistReader extends Reader {
 
             for (int j = 0; j < results.length(); j++) {
                 JSONObject result = results.getJSONObject(j);
-                String ruleId = result.getString("ruleId");
+                String ruleId = result.optString("ruleId", "");
+                if (ruleId.isEmpty()) {
+                    continue;
+                }
+
                 TestCaseResult tcr = new TestCaseResult();
 
-                // First, try to get the CWE based on the rule id. If it fails, try to get it from
-                // the properties of the violation.
+                // Prefer direct ruleId mapping; fallback to extracting CWE from properties/tags
                 Type t = getTypeFromRuleId(ruleId);
-
                 if (t != null) {
                     tcr.setCWE(t.number);
                     tcr.setCategory(t.id);
                 } else {
-                    // If no direct mapping found, try to get CWE from properties
                     int cweFromProperties = getCweFromProperties(result);
                     if (cweFromProperties != 0) {
                         tcr.setCWE(cweFromProperties);
@@ -225,27 +200,36 @@ public class DatadogSaistReader extends Reader {
                 }
 
                 JSONArray locations = result.getJSONArray("locations");
-                String filename =
-                        locations
-                                .getJSONObject(0)
-                                .getJSONObject("physicalLocation")
-                                .getJSONObject("artifactLocation")
-                                .getString("uri");
+                String filename = locations
+                        .getJSONObject(0)
+                        .getJSONObject("physicalLocation")
+                        .getJSONObject("artifactLocation")
+                        .optString("uri", "");
 
-                filename = filename.substring(filename.lastIndexOf('/') + 1);
+                if (filename.isEmpty()) {
+                    continue;
+                }
+
+                // Reduce to basename and require Benchmark test file
+                int lastSlash = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'));
+                if (lastSlash >= 0 && lastSlash + 1 < filename.length()) {
+                    filename = filename.substring(lastSlash + 1);
+                }
                 if (!filename.startsWith(BenchmarkScore.TESTCASENAME)) {
                     continue;
                 }
 
-                int testnumber = testNumber(filename);
+                int testnumber = testNumber(filename); // static helper on Reader
+                if (testnumber < 0) {
+                    continue;
+                }
                 tcr.setNumber(testnumber);
 
-                // Get evidence/message from result
-                String evidence = "";
-                if (result.has("message") && result.getJSONObject("message").has("text")) {
-                    evidence = result.getJSONObject("message").getString("text");
-                } else {
-                    evidence = "SAIST finding for rule: " + ruleId;
+                // Evidence/message
+                String evidence = "SAIST finding for rule: " + ruleId;
+                if (result.has("message")) {
+                    JSONObject msg = result.getJSONObject("message");
+                    evidence = msg.optString("text", evidence);
                 }
                 tcr.setEvidence(evidence);
 
@@ -255,12 +239,12 @@ public class DatadogSaistReader extends Reader {
         return tr;
     }
 
-    // Enumeration that contains the CWE and associated category for SAIST rules
+    /** Enumeration of CWE + category IDs for SAIST rules. */
     private enum Type {
-        COMMAND_INJECTION(77),  // CWE-77 for SAIST rules
+        COMMAND_INJECTION(77),  // CWE-77
         SQL_INJECTION(89),      // CWE-89
         XPATH_INJECTION(91),    // CWE-91
-        XSS(79);               // CWE-79
+        XSS(79);                // CWE-79
 
         private final int number;
         private final String id;
